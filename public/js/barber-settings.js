@@ -1,5 +1,5 @@
 // Barber: one-time settings, notifications, installing the app, pairing another device.
-import { api, button, closeAllSheets, h, icon, platform, sheet, toast } from './ui.js';
+import { api, button, closeAllSheets, copyText, h, icon, platform, sheet, toast } from './ui.js';
 import { LANGS, LANG_NAMES, setLang, t, weekdayLong } from './i18n.js';
 
 const store = (fn) => {
@@ -208,7 +208,7 @@ export function openSettings({ D, post, load, setAuth }) {
       h(
         'div',
         { class: 'row-btns mt' },
-        button(t('copy'), () => navigator.clipboard.writeText(link).then(() => toast(t('copied')), () => {}), 'gray'),
+        button(t('copy'), () => copyText(link).then(() => toast(t('copied'))), 'gray'),
         navigator.share && button(t('share'), () => navigator.share({ title: s.shopName, url: link }).catch(() => {}), 'gray'),
       ),
 

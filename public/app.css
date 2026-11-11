@@ -872,3 +872,9 @@ input[type='time'] {
 .card + .days {
   margin-top: 10px;
 }
+
+.offscreen {
+  position: fixed;
+  top: -100px;
+  opacity: 0;
+}

@@ -134,7 +134,12 @@ export async function busy(btn, fn) {
 
 export function button(label, onclick, cls = '') {
   const b = h('button', { class: 'btn ' + cls, type: 'button', text: label });
-  b.addEventListener('click', () => busy(b, () => onclick(b)));
+  b.addEventListener('click', () =>
+    busy(b, () => onclick(b)).catch((e) => {
+      console.error(e);
+      toast(document.documentElement.lang === 'en' ? 'Something went wrong' : document.documentElement.lang === 'he' ? 'משהו השתבש' : 'حدث خطأ');
+    }),
+  );
   return b;
 }
 
@@ -159,6 +164,20 @@ export function randomId() {
   let s = '';
   for (const x of b) s += String.fromCharCode(x);
   return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/** Copies text; works even where the clipboard API is unavailable. */
+export async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const ta = h('textarea', { readonly: true, class: 'offscreen' });
+    ta.value = text;
+    document.body.append(ta);
+    ta.select();
+    document.execCommand('copy');
+    ta.remove();
+  }
 }
 
 export const waLink = (phone, text) => `https://wa.me/${String(phone).replace(/\D/g, '')}?text=${encodeURIComponent(text)}`;

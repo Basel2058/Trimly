@@ -3,6 +3,7 @@ import * as auth from './auth';
 import * as barber from './barber';
 import * as customer from './customer';
 import { ensureSchema, getMeta, q, resetSchemaCache, setMetaStmt, type Env } from './db';
+import { isLocalHost } from './core';
 import { ApiError, json, type Ctx } from './http';
 import { msg } from './msg';
 import { notifyBarber } from './push';
@@ -32,6 +33,7 @@ const ROUTES: Record<string, Handler> = {
   'POST /api/b/late': barber.markLate,
   'POST /api/b/forgive': barber.forgive,
   'POST /api/b/hours': barber.setHours,
+  'POST /api/b/rehome': barber.rehomeMore,
   'POST /api/b/settings': barber.saveSettings,
   'POST /api/b/delay': barber.setDelay,
   'GET /api/b/push/key': barber.pushKey,
@@ -118,6 +120,11 @@ export async function handle(req: Request, env: Env, wait: (p: Promise<unknown>)
     const route = ROUTES[key];
     if (!route) {
       if (env.TEST_MODE === '1' && key === 'POST /api/test/reset') return finish(await testReset(c));
+      if (env.TEST_MODE === '1' && key === 'POST /api/test/unclaim') {
+        // the recovery step from the README, for tests
+        await c.db.batch([c.db.prepare(`DELETE FROM meta WHERE k = 'owner'`), c.db.prepare(`DELETE FROM sessions`)]);
+        return finish(json(c, { ok: true }));
+      }
       if (env.TEST_MODE === '1' && key === 'POST /api/test/cron') {
         await housekeeping(env, c.now, wait);
         return finish(json(c, { ok: true }));
@@ -125,7 +132,13 @@ export async function handle(req: Request, env: Env, wait: (p: Promise<unknown>)
       if (c.url.pathname.startsWith('/api/')) throw new ApiError(404, 'not_found');
       return env.ASSETS ? env.ASSETS.fetch(req) : new Response('Not found', { status: 404 });
     }
+    // Sessions must never travel unencrypted (plain http is only allowed on the developer's own machine).
+    if (!c.secure && !isLocalHost(c.url.hostname)) {
+      if (req.method !== 'GET') throw new ApiError(400, 'https_only');
+      return Response.redirect('https://' + c.url.host + c.url.pathname + c.url.search, 301);
+    }
     if (req.method !== 'GET') {
+      if (Number(req.headers.get('content-length') ?? 0) > 16000) throw new ApiError(413, 'too_large');
       // Same-origin JSON only: a forged cross-site request can never change anything.
       if (req.headers.get('origin') !== c.url.origin) throw new ApiError(403, 'bad_origin');
       if (!(req.headers.get('content-type') ?? '').includes('application/json')) throw new ApiError(415, 'bad_type');

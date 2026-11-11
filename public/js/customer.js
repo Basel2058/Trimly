@@ -48,8 +48,50 @@ function apply(st) {
   render();
 }
 
+// A booking whose reply never arrived is "in doubt". It is remembered (for a day at most) and resolved
+// automatically: if the server did record it, the appointment simply appears; if not, it is forgotten.
+const pending = {
+  get() {
+    const p = store(() => JSON.parse(localStorage.getItem('pending')));
+    return p && Date.now() - p.at < 86400000 ? p : null;
+  },
+  set: (p) => store(() => localStorage.setItem('pending', JSON.stringify({ ...p, at: Date.now() }))),
+  clear: () => store(() => localStorage.removeItem('pending')),
+};
+const inDoubt = (e) => e.status === 0 || e.status >= 500;
+
+/** Returns true when an in-doubt booking turned out to exist (and is now on screen). */
+async function recover() {
+  const p = pending.get();
+  if (!p) return false;
+  try {
+    const st = await api('/api/book', { method: 'POST', body: { ...p, recover: true } });
+    pending.clear();
+    closeAllSheets();
+    apply(st);
+    return true;
+  } catch (e) {
+    if (!inDoubt(e)) pending.clear();
+    return false;
+  }
+}
+
+/** Books a slot. `who` is given only the first time (name + phone). */
+async function bookSlot(body) {
+  pending.set(body);
+  try {
+    const st = await api('/api/book', { method: 'POST', body });
+    pending.clear();
+    return st;
+  } catch (e) {
+    if (!inDoubt(e)) pending.clear();
+    throw e;
+  }
+}
+
 async function load() {
   try {
+    if (await recover()) return;
     apply(await api('/api/state', { token }));
   } catch (e) {
     failed = true;
@@ -150,7 +192,8 @@ function apptView() {
     const next = firstSlot();
     c.append(h('p', { class: 'sub', text: t(next ? 'graceText' : 'graceNone', { time: a.graceTime }) }));
     if (next) {
-      c.append(button(t('moveTo', { when: when(next.date, next.time, S.today) }), () => act('/api/move', { start: next.start })));
+      const text = next.date === S.today ? t('moveToTime', { time: next.time }) : t('moveToDay', { day: dayLabel(next.date, S.today), time: next.time });
+      c.append(button(text, () => act('/api/move', { start: next.start })));
     }
   } else {
     if (S.shop.graceMin > 0) c.append(h('p', { class: 'sub', text: t('heldUntil', { time: a.graceTime }) }));
@@ -202,7 +245,16 @@ function choose(slot, direct) {
   }
   const id = randomId(); // one id per attempt: a retry can never create a second booking
   if (S.me) {
-    const go = () => act('/api/book', { start: slot.start, id, lang: getLang() });
+    const go = async () => {
+      try {
+        if (await recover()) return;
+        const st = await bookSlot({ start: slot.start, id, lang: getLang() });
+        closeAllSheets();
+        apply(st);
+      } catch (e) {
+        fail(e);
+      }
+    };
     if (direct) return go();
     sheet((close) => [
       h('h2', { text: t('confirmTitle') }),
@@ -231,7 +283,8 @@ function choose(slot, direct) {
       if (n.length < 2) return name.setError(t('badName'));
       if (p.replace(/\D/g, '').length < 9) return phone.setError(t('badPhone'));
       try {
-        const st = await api('/api/book', { method: 'POST', body: { start: slot.start, id, lang: getLang(), name: n, phone: p } });
+        if (await recover()) return;
+        const st = await bookSlot({ start: slot.start, id, lang: getLang(), name: n, phone: p });
         closeAllSheets();
         apply(st);
       } catch (e) {

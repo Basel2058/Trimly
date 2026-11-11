@@ -251,7 +251,9 @@ export async function forgive(c: Ctx): Promise<Response> {
  * Finds upcoming visits that no longer fit the working hours and gives each the nearest free time.
  * Runs after the barber changes a day or the weekly hours; the barber gets a ready WhatsApp message per customer.
  */
-async function rehome(c: Ctx, w: World): Promise<{ moved: Json[]; unplaced: Json[] }> {
+const REHOME_BATCH = 25; // keeps one request well inside the database's per-request query allowance
+
+async function rehome(c: Ctx, w: World, after = 0): Promise<{ moved: Json[]; unplaced: Json[]; more: boolean; cursor: number }> {
   const s = w.settings;
   const today = localParts(c.now).date;
   const rows = (
@@ -262,8 +264,10 @@ async function rehome(c: Ctx, w: World): Promise<{ moved: Json[]; unplaced: Json
   const last = rows[rows.length - 1];
   const span = Math.max(s.horizonDays, last ? daysBetween(today, localParts(last.start_at).date) + 1 : 0) + 2;
   const windows = workWindows(s, w.overrides, addDays(today, -1), span);
-  const out = rows.filter((a) => !insideWindows(windows, a.start_at, a.start_at + a.dur_min * 60));
-  if (!out.length) return { moved: [], unplaced: [] };
+  // `after` lets a long run continue where the previous call stopped (and never retry the same visit twice).
+  const out = rows.filter((a) => a.start_at > after && !insideWindows(windows, a.start_at, a.start_at + a.dur_min * 60));
+  if (!out.length) return { moved: [], unplaced: [], more: false, cursor: after };
+  const batch = out.slice(0, REHOME_BATCH);
 
   const outIds = new Set(out.map((a) => a.id));
   const outStarts = new Set(out.map((a) => a.start_at));
@@ -272,7 +276,7 @@ async function rehome(c: Ctx, w: World): Promise<{ moved: Json[]; unplaced: Json
 
   const stmts: D1PreparedStatement[] = [];
   const plan: Array<{ a: ApptRow; to: number | null }> = [];
-  for (const a of out.slice(0, 40)) {
+  for (const a of batch) {
     if (a.kind === 'block') {
       stmts.push(
         c.db.prepare(`UPDATE appointments SET status = 'cancelled', cancelled_by = 'barber', updated_at = ? WHERE id = ?`).bind(c.now, a.id),
@@ -292,7 +296,7 @@ async function rehome(c: Ctx, w: World): Promise<{ moved: Json[]; unplaced: Json
   const unplaced: Json[] = [];
   const none = new Map<string, { late: number; noShow: number }>();
   let i = 0;
-  for (const a of out.slice(0, 40)) {
+  for (const a of batch) {
     if (a.kind === 'block') {
       i++;
       continue;
@@ -303,7 +307,16 @@ async function rehome(c: Ctx, w: World): Promise<{ moved: Json[]; unplaced: Json
     if (ok) moved.push({ ...view, fromDate: localParts(a.start_at).date, fromTime: timeOf(a.start_at) });
     else unplaced.push(view);
   }
-  return { moved, unplaced };
+  // Anything left over is handled by the next call (the app asks again by itself).
+  return { moved, unplaced, more: out.length > batch.length, cursor: batch[batch.length - 1]!.start_at };
+}
+
+/** Continues a large re-homing run (for example after closing a weekday for good). */
+export async function rehomeMore(c: Ctx): Promise<Response> {
+  const b = await body(c);
+  const { world: w } = await barberWorld(c);
+  const after = typeof b.after === 'number' && Number.isInteger(b.after) ? b.after : 0;
+  return fresh(c, b.date, await rehome(c, w, after));
 }
 
 /** "Start late", "finish early", "stay longer", "day off" — one small form, the software does the rest. */

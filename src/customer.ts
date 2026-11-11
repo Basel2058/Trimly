@@ -211,7 +211,10 @@ export async function book(c: Ctx): Promise<Response> {
   const claimed = who ?? claimedIdentity(dCk);
   if (!claimed) throw new ApiError(401, 'need_identity');
 
-  await limitBookings(c);
+  // "recover" only asks for a booking this device already made (its reply was lost on the way).
+  // It never creates anything, so it needs no rate limit; the id is a secret only that device knows.
+  const recover = b.recover === true;
+  if (!recover) await limitBookings(c);
 
   const { world: w, extra } = await loadWorld(c, [
     c.db.prepare(`SELECT * FROM appointments WHERE id = ?`).bind(id),
@@ -240,6 +243,7 @@ export async function book(c: Ctx): Promise<Response> {
     if (same(existing)) return done();
     throw new ApiError(409, 'slot_taken');
   }
+  if (recover) throw new ApiError(404, 'no_appt');
 
   const strikes = strikeCounts(extra[1]);
   if (strikes.noShow >= NO_SHOW_LIMIT) throw new ApiError(403, 'blocked');

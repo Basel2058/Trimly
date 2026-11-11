@@ -125,6 +125,29 @@ describe('booking', () => {
     expect(thief.status).toBe(409);
   });
 
+  it('a booking whose reply was lost can be recovered by the same device — and only by it', async () => {
+    const b = await barber(NOW);
+    const id = randomId();
+    const start = at(TUE, '10:00');
+    // the request reached the server, but imagine the phone never received the answer (no cookies stored)
+    expect((await new Client(NOW).book(start, who(1), id)).status).toBe(200);
+    const phone = new Client(NOW);
+    expect((await phone.state()).appt).toBeNull();
+    const r = await phone.post('/api/book', { start, id, lang: 'ar', ...who(1), recover: true });
+    expect(r.status).toBe(200);
+    expect(r.data.appt.time).toBe('10:00');
+    expect((await phone.state()).appt.time).toBe('10:00');
+    expect((await b.get(`/api/b/day?date=${TUE}`)).data.appts.length).toBe(1);
+
+    // recovering never creates a booking, and needs the secret id plus the matching details
+    const other = new Client(NOW);
+    expect((await other.post('/api/book', { start: at(TUE, '11:00'), id: randomId(), lang: 'ar', ...who(2), recover: true })).status).toBe(404);
+    expect((await other.post('/api/book', { start, id: randomId(), lang: 'ar', ...who(1), recover: true })).status).toBe(404);
+    expect((await other.post('/api/book', { start, id, lang: 'ar', ...who(2), recover: true })).status).toBe(409);
+    expect(other.jar.size).toBe(0);
+    expect((await b.get(`/api/b/day?date=${TUE}`)).data.appts.length).toBe(1);
+  });
+
   it('rejects invalid input', async () => {
     await barber(NOW);
     const c = new Client(NOW);

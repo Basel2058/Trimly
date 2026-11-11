@@ -65,6 +65,22 @@ describe('claiming the shop and signing in', () => {
     expect((await attacker.post('/api/b/login', { code: b.recovery })).status).toBe(200);
   });
 
+  it('locked out completely: the documented reset lets the owner claim the shop again, keeping everything', async () => {
+    const b = await barber(NOW, { slotMin: 20, address: 'شارع 1' });
+    await new Client(NOW).book(at(TUE, '10:00'), who(1));
+    expect((await new Client(NOW).post('/api/test/unclaim')).status).toBe(200);
+    expect((await b.get('/api/b/day')).status).toBe(401); // old sessions are gone
+    const again = new Client(NOW);
+    expect((await again.get('/api/b/session')).data.state).toBe('setup');
+    const r = await again.post('/api/b/setup', { shopName: 'صالون أحمد', lang: 'ar' });
+    expect(r.status).toBe(200);
+    expect(r.data.recovery).not.toBe(b.recovery);
+    const d = (await again.get(`/api/b/day?date=${TUE}`)).data;
+    expect(d.shop).toMatchObject({ slotMin: 20, address: 'شارع 1', phone: '+972509999999' });
+    expect(d.appts.length).toBe(1);
+    expect((await new Client(NOW).post('/api/b/login', { code: b.recovery })).status).toBe(403); // the old code is dead
+  });
+
   it('an idle session lasts; an expired one is refused', async () => {
     const b = await barber(NOW);
     b.now = NOW + 200 * 86400;
@@ -270,6 +286,31 @@ describe('the barber changes working hours — the software moves everyone', () 
     expect((await b.post('/api/b/settings', { slotMin: 7 })).status).toBe(400);
     expect((await b.post('/api/b/settings', { shopName: '' })).status).toBe(400);
     expect((await b.post('/api/b/settings', { phone: 'abc' })).status).toBe(400);
+  });
+
+  it('a very large change is processed in portions until everyone is moved', async () => {
+    const b = await barber(NOW, { slotMin: 15 });
+    const starts: number[] = [];
+    for (let i = 0; i < 30; i++) starts.push(at(WED, '09:00') + i * 900);
+    const booked = await Promise.all(starts.map((s, i) => new Client(NOW).book(s, who(200 + i))));
+    expect(booked.every((r) => r.status === 200)).toBe(true);
+    const hours = Array.from({ length: 7 }, (_, i) => (i === 3 ? [] : [[540, 1200]])); // Wednesdays closed for good
+    let r = await b.post('/api/b/settings', { hours, date: THU });
+    expect(r.data.moved.length).toBe(25);
+    expect(r.data.more).toBe(true);
+    const all = [...r.data.moved];
+    r = await b.post('/api/b/rehome', { date: THU, after: r.data.cursor });
+    expect(r.data.more).toBe(false);
+    all.push(...r.data.moved);
+    expect(all.length).toBe(30);
+    expect(r.data.unplaced).toEqual([]);
+    // every visit landed on Thursday at its own time of day, none lost, none doubled
+    expect(new Set(all.map((m: any) => m.start)).size).toBe(30);
+    expect(all.every((m: any) => m.date === THU && m.time === m.fromTime)).toBe(true);
+    expect((await day(b, THU)).appts.length).toBe(30);
+    expect((await day(b, WED)).appts.length).toBe(0);
+    // asking again changes nothing
+    expect((await b.post('/api/b/rehome', { date: THU })).data.moved).toEqual([]);
   });
 
   it('“running late” shows on today’s customers only', async () => {

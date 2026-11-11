@@ -1,6 +1,6 @@
 // Barber dashboard: today's line-up, and the few buttons the barber ever needs.
 import './i18n-barber.js';
-import { api, button, closeAllSheets, field, h, icon, randomId, registerSW, sheet, toast, waLink } from './ui.js';
+import { api, button, closeAllSheets, copyText, field, h, icon, randomId, registerSW, sheet, toast, waLink } from './ui.js';
 import { dayFull, dayLabel, dayNum, detectLang, setLang, t, tIn, weekdayShort, when } from './i18n.js';
 import { banners, openSettings, syncPush } from './barber-settings.js';
 
@@ -10,6 +10,7 @@ let offset = 0;
 let date = null; // null = follow "today"
 let auth = 'loading'; // loading | setup | recovery | login | ok | offline
 let recovery = '';
+let pending = { moved: [], unplaced: [] }; // customers moved by the last change of hours
 
 const now = () => Math.floor(Date.now() / 1000) + offset;
 const store = (fn) => {
@@ -30,7 +31,14 @@ function apply(d) {
   document.title = d.shop.shopName || 'Trimly';
   store(() => localStorage.setItem('day', JSON.stringify(d)));
   render();
-  if ((d.moved && d.moved.length) || (d.unplaced && d.unplaced.length)) movedSheet(d.moved, d.unplaced);
+  if (d.moved || d.unplaced) {
+    pending.moved.push(...(d.moved || []));
+    pending.unplaced.push(...(d.unplaced || []));
+    if (d.more) return void post('rehome', { date: d.date, after: d.cursor });
+    const { moved, unplaced } = pending;
+    pending = { moved: [], unplaced: [] };
+    if (moved.length || unplaced.length) movedSheet(moved, unplaced);
+  }
 }
 
 function onError(e, quiet) {
@@ -441,7 +449,7 @@ function authView() {
         { class: 'card' },
         h('p', { class: 'sub', text: t('recText') }),
         h('div', { class: 'code long', id: 'recovery', text: recovery }),
-        button(t('copy'), () => navigator.clipboard.writeText(recovery).then(() => toast(t('copied')), () => {}), 'gray'),
+        button(t('copy'), () => copyText(recovery).then(() => toast(t('copied'))), 'gray'),
         button(t('savedIt'), load),
       ),
     ];

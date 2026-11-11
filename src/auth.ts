@@ -2,7 +2,7 @@
 import { b64url, randomBytes, sha256 } from './core';
 import { allow, q, setMetaStmt } from './db';
 import { ApiError, body, clearCookie, getCookie, json, setCookie, COOKIE_AGE, type Ctx } from './http';
-import { DEFAULT_SETTINGS, mergeSettings } from './slots';
+import { DEFAULT_SETTINGS, mergeSettings, parseSettings } from './slots';
 import { normalizePhone, asLang } from './core';
 import { loadWorld, type World } from './world';
 
@@ -79,7 +79,12 @@ export async function setup(c: Ctx): Promise<Response> {
   const b = await body(c);
   const phone = b.phone ? normalizePhone(b.phone) : '';
   if (phone === null) throw new ApiError(400, 'bad_phone');
-  const settings = mergeSettings(DEFAULT_SETTINGS, { shopName: b.shopName, phone, lang: asLang(b.lang) }, true);
+  // A shop that is being re-claimed (after a recovery reset) keeps its hours and other settings.
+  const stored = await q(() => c.db.prepare(`SELECT v FROM meta WHERE k = 'settings'`).first<{ v: string }>());
+  const base = stored ? parseSettings(stored.v) : DEFAULT_SETTINGS;
+  const patch: Record<string, unknown> = { shopName: b.shopName, lang: asLang(b.lang) };
+  if (phone || !stored) patch.phone = phone;
+  const settings = mergeSettings(base, patch, true);
   if (!settings || !settings.shopName) throw new ApiError(400, 'bad_name');
   if (!(await allow(c.db, 'setup', 20, 3600, c.now))) throw new ApiError(429, 'too_many');
 

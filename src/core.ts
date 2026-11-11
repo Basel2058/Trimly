@@ -113,3 +113,8 @@ export function normalizeName(raw: unknown): string | null {
 
 export type Lang = 'ar' | 'he' | 'en';
 export const asLang = (v: unknown, fallback: Lang = 'ar'): Lang => (v === 'ar' || v === 'he' || v === 'en' ? v : fallback);
+
+/** Plain http is acceptable only on the developer's own machine or home network; everywhere else we insist on https. */
+export function isLocalHost(hostname: string): boolean {
+  return hostname === 'localhost' || /^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)\d{1,3}(\.\d{1,3}){1,2}$/.test(hostname);
+}

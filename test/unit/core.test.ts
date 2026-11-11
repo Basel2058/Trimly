@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { b64url, displayPhone, hmacKey, maskPhone, normalizeName, normalizePhone, randomBytes, randomId, signToken, unb64url, verifyToken, ID_RE } from '../../src/core';
+import { b64url, displayPhone, hmacKey, isLocalHost, maskPhone, normalizeName, normalizePhone, randomBytes, randomId, signToken, unb64url, verifyToken, ID_RE } from '../../src/core';
 import { buildIcs, fold, googleCalendarUrl, type CalEvent } from '../../src/ics';
 import { localToEpoch } from '../../src/time';
 
@@ -22,6 +22,15 @@ describe('phone numbers', () => {
     expect(displayPhone('+972501234567')).toBe('050-1234567');
     expect(displayPhone('+14155552671')).toBe('+14155552671');
     expect(maskPhone('+972501234567')).toBe('050•••••67');
+  });
+});
+
+describe('https enforcement', () => {
+  it('allows plain http only on a local machine or home network', () => {
+    for (const h of ['localhost', '127.0.0.1', '192.168.1.20', '10.0.0.5', '172.16.4.1', '172.31.255.254']) expect(isLocalHost(h), h).toBe(true);
+    for (const h of ['trimly.example.workers.dev', 'example.com', '8.8.8.8', '172.32.0.1', '192.169.1.1', 'localhost.evil.com', '127.evil.com', '10.evil.com']) {
+      expect(isLocalHost(h), h).toBe(false);
+    }
   });
 });
 

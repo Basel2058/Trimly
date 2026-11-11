@@ -212,6 +212,48 @@ test('the app still opens without a connection and recovers by itself', async ({
   await expect(page.locator('#hero')).toBeVisible({ timeout: 20000 });
 });
 
+test('the reply to a booking is lost on a bad connection: the phone recovers the appointment by itself', async ({ page, owner }) => {
+  await page.goto('/');
+  // the server receives every request, but the phone never hears back
+  let reached = 0;
+  await page.route('**/api/book', async (route) => {
+    await route.fetch().catch(() => null);
+    reached++;
+    await route.abort('connectionreset');
+  });
+  await page.locator('#chips .chip', { hasText: '10:00' }).click();
+  await page.fill('.sheet.show input[name=name]', 'أحمد خليل');
+  await page.fill('.sheet.show input[name=tel]', '0501234567');
+  await page.click('.sheet.show button[type=submit]');
+  await expect(page.locator('.toast')).toHaveText('لا يوجد اتصال بالإنترنت', { timeout: 15000 });
+  expect(reached).toBe(4); // tried four times…
+  expect((await barberDay(owner, TUE)).appts.length).toBe(1); // …and created exactly one appointment
+
+  // the connection comes back: simply opening the page again shows the appointment
+  await page.unroute('**/api/book');
+  await page.reload();
+  await expect(page.locator('#appt .hero-time')).toHaveText('10:00');
+  await page.reload(); // and it is remembered normally from now on
+  await expect(page.locator('#appt .hero-time')).toHaveText('10:00');
+  expect(await page.evaluate(() => localStorage.getItem('pending'))).toBeNull();
+});
+
+test('a booking that truly failed is not created later behind the customer’s back', async ({ page, owner }) => {
+  await page.goto('/');
+  await page.route('**/api/book', (route) => route.abort('connectionreset')); // never reaches the server
+  await page.click('#hero .btn');
+  await page.fill('.sheet.show input[name=name]', 'أحمد خليل');
+  await page.fill('.sheet.show input[name=tel]', '0501234567');
+  await page.click('.sheet.show button[type=submit]');
+  await expect(page.locator('.toast')).toHaveText('لا يوجد اتصال بالإنترنت', { timeout: 15000 });
+  await page.unroute('**/api/book');
+  await page.reload();
+  await expect(page.locator('#hero')).toBeVisible();
+  await expect(page.locator('#appt')).toHaveCount(0);
+  expect((await barberDay(owner, TUE)).appts).toEqual([]);
+  expect(await page.evaluate(() => localStorage.getItem('pending'))).toBeNull();
+});
+
 test('the page works on a small, old phone screen without sideways scrolling', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 568 });
   await page.goto('/');
