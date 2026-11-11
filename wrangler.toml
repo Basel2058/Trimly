@@ -1,0 +1,25 @@
+name = "trimly"
+main = "src/worker.ts"
+compatibility_date = "2026-06-01"
+
+# Static files are served straight from the edge (free, unmetered);
+# the Worker only runs for the API and the two dynamic manifests.
+[assets]
+directory = "./public"
+binding = "ASSETS"
+html_handling = "auto-trailing-slash"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*", "/manifest.webmanifest", "/barber.webmanifest"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "trimly"
+# After `npx wrangler d1 create trimly`, paste the id it prints here:
+database_id = "00000000-0000-0000-0000-000000000000"
+
+# Housekeeping + the barber's morning summary.
+[triggers]
+crons = ["*/10 * * * *"]
+
+[observability]
+enabled = true
