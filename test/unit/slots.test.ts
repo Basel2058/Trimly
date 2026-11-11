@@ -161,6 +161,22 @@ describe('availability', () => {
   });
 });
 
+describe('speed (the free hosting plan allows about 10 ms of computing per request)', () => {
+  it('the heaviest possible calendar is computed in a couple of milliseconds', () => {
+    const s = S({ slotMin: 10, horizonDays: 30, hours: Array.from({ length: 7 }, () => [[360, 1440]] as [number, number][]) });
+    const now = at(TUE, '05:00');
+    const busy: Interval[] = [];
+    for (let d = 0; d < 30; d++) for (let k = 0; k < 20; k++) busy.push([now + d * 86400 + 7200 + k * 2400, now + d * 86400 + 7200 + k * 2400 + 600]);
+    availability({ settings: s, overrides: none, busy, now }); // warm the caches
+    const t0 = performance.now();
+    let total = 0;
+    for (let i = 0; i < 50; i++) total += availability({ settings: s, overrides: none, busy, now }).reduce((n, d) => n + d.slots.length, 0);
+    const ms = (performance.now() - t0) / 50;
+    expect(total / 50).toBeGreaterThan(2500); // thousands of slots…
+    expect(ms).toBeLessThan(8); // …inside the budget with room to spare (about 1.5 ms here; it was over 40 ms before caching)
+  });
+});
+
 describe('nearestSlot', () => {
   const day = (date: string, ...t: string[]) => ({ date, slots: t.map((x) => at(date, x)) });
   it('prefers the same day, closest time, later on a tie', () => {

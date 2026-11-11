@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addDays, dayOfWeek, daysBetween, hhmm, isDate, localParts, localToEpoch, offsetSec, timeOf } from '../../src/time';
+import { addDays, dayOfWeek, daysBetween, hhmm, isDate, localParts, localToEpoch, offsetSec, slowOffsetSec, timeOf } from '../../src/time';
 
 const utc = (s: string): number => Date.parse(s) / 1000;
 
@@ -7,6 +7,29 @@ describe('time zone conversion (Asia/Jerusalem)', () => {
   it('uses +2 in winter and +3 in summer', () => {
     expect(offsetSec(utc('2026-01-15T12:00:00Z'))).toBe(7200);
     expect(offsetSec(utc('2026-07-15T12:00:00Z'))).toBe(10800);
+  });
+
+  it('the fast cached offset equals the exact one for every half hour of ten years', () => {
+    let bad = 0;
+    for (let t = utc('2024-01-01T00:00:00Z'); t < utc('2034-01-01T00:00:00Z'); t += 1800) {
+      if (offsetSec(t) !== slowOffsetSec(t)) bad++;
+    }
+    expect(bad).toBe(0);
+    // also right around each change, to the second
+    for (const change of ['2026-03-27T00:00:00Z', '2026-10-24T23:00:00Z', '2027-03-26T00:00:00Z', '2027-10-30T23:00:00Z']) {
+      for (const d of [-3601, -3600, -1, 0, 1, 3599, 3600]) expect(offsetSec(utc(change) + d)).toBe(slowOffsetSec(utc(change) + d));
+      expect(offsetSec(utc(change) - 1)).not.toBe(offsetSec(utc(change)));
+    }
+  });
+
+  it('local parts match the platform formatter exactly', () => {
+    const f = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jerusalem', hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+    for (let t = utc('2026-01-01T00:00:00Z'); t < utc('2027-01-01T00:00:00Z'); t += 5400) {
+      const p = localParts(t);
+      const o: Record<string, string> = {};
+      for (const x of f.formatToParts(new Date(t * 1000))) o[x.type] = x.value;
+      expect(`${p.date} ${hhmm(p.mins)}`).toBe(`${o.year}-${o.month}-${o.day} ${o.hour}:${o.minute}`);
+    }
   });
 
   it('converts wall time to the right instant in both seasons', () => {

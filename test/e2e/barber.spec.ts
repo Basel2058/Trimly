@@ -25,6 +25,8 @@ test('first visit: set up the shop once, keep the recovery code, land on today',
   const code = (await page.locator('#recovery').innerText()).trim();
   expect(code).toMatch(/^[A-Z2-9]{4}(-[A-Z2-9]{4}){3}$/);
   await page.click('text=حفظته');
+  await expect(page.locator('.sheet.show h2')).toHaveText('الإعدادات'); // straight to the one-time settings
+  await page.keyboard.press('Escape');
   await expect(page.locator('h1')).toHaveText('اليوم');
   await expect(page.locator('#timeline .item.free')).toHaveCount(22);
   await expect(page.locator('#hours')).toContainText('09:00');

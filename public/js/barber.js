@@ -450,7 +450,11 @@ function authView() {
         h('p', { class: 'sub', text: t('recText') }),
         h('div', { class: 'code long', id: 'recovery', text: recovery }),
         button(t('copy'), () => copyText(recovery).then(() => toast(t('copied'))), 'gray'),
-        button(t('savedIt'), load),
+        button(t('savedIt'), async () => {
+          await load();
+          // first run: go straight to the one-time settings (working hours, address…)
+          if (D) openSettings({ D, post, load, setAuth });
+        }),
       ),
     ];
   }

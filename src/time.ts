@@ -38,15 +38,47 @@ function wallParts(epochSec: number): { y: number; m: number; d: number; h: numb
   return { y: o.year!, m: o.month!, d: o.day!, h: o.hour! % 24, min: o.minute!, s: o.second! };
 }
 
-export function localParts(epochSec: number): LocalParts {
+/** Offset of the shop's zone from UTC (seconds) at the given instant — exact, but slow (uses Intl). */
+export function slowOffsetSec(epochSec: number): number {
   const p = wallParts(epochSec);
-  return { y: p.y, m: p.m, d: p.d, h: p.h, min: p.min, date: dateKey(p.y, p.m, p.d), mins: p.h * 60 + p.min };
+  return Math.round(Date.UTC(p.y, p.m - 1, p.d, p.h, p.min, p.s) / 1000) - Math.floor(epochSec);
 }
+
+// Intl is far too slow to call once per slot (thousands per request). The offset only changes twice a year,
+// always on the hour, so it is cached per UTC day; the two days that contain a change are cached per hour.
+const dayOffset = new Map<number, number | null>();
+const hourOffset = new Map<number, number>();
 
 /** Offset of the shop's zone from UTC (seconds) at the given instant. */
 export function offsetSec(epochSec: number): number {
-  const p = wallParts(epochSec);
-  return Math.round(Date.UTC(p.y, p.m - 1, p.d, p.h, p.min, p.s) / 1000) - Math.floor(epochSec);
+  const day = Math.floor(epochSec / 86400);
+  let v = dayOffset.get(day);
+  if (v === undefined) {
+    const a = slowOffsetSec(day * 86400);
+    const b = slowOffsetSec(day * 86400 + 86399);
+    v = a === b ? a : null;
+    if (dayOffset.size > 4000) dayOffset.clear();
+    dayOffset.set(day, v);
+  }
+  if (v !== null) return v;
+  const hour = Math.floor(epochSec / 3600);
+  let h = hourOffset.get(hour);
+  if (h === undefined) {
+    h = slowOffsetSec(hour * 3600);
+    if (hourOffset.size > 4000) hourOffset.clear();
+    hourOffset.set(hour, h);
+  }
+  return h;
+}
+
+export function localParts(epochSec: number): LocalParts {
+  const t = new Date((Math.floor(epochSec) + offsetSec(epochSec)) * 1000);
+  const y = t.getUTCFullYear();
+  const m = t.getUTCMonth() + 1;
+  const d = t.getUTCDate();
+  const h = t.getUTCHours();
+  const min = t.getUTCMinutes();
+  return { y, m, d, h, min, date: dateKey(y, m, d), mins: h * 60 + min };
 }
 
 export function parseDate(date: string): [number, number, number] {
