@@ -146,6 +146,7 @@ async function buildState(c: Ctx, over: { a?: string; d?: string } = {}, flash: 
 
   return {
     now: c.now,
+    today: localParts(c.now).date,
     open: w.owner,
     shop: { name: s.shopName, address: s.address, phone: s.phone, slotMin: s.slotMin, graceMin: s.graceMin, lang: s.lang },
     me: me ? { name: me.n, phone: maskPhone(me.p) } : null,
