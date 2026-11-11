@@ -100,7 +100,12 @@ async function dayView(c: Ctx, w: World, dateIn: unknown, flash: Json = {}): Pro
     today,
     date,
     shop: s,
-    hours: { windows: dayWindowsMin(s, ov, date), normal: dayWindowsMin(s, undefined, date), override: ov ?? null },
+    hours: {
+      windows: dayWindowsMin(s, ov, date),
+      spans: dayWindowsMin(s, ov, date).map(([a, b]) => [localToEpoch(date, a), localToEpoch(date, b)]),
+      normal: dayWindowsMin(s, undefined, date),
+      override: ov ?? null,
+    },
     appts,
     free: (avail.find((d) => d.date === date)?.slots ?? []).map((t) => [t, timeOf(t)]),
     slots: avail.map((d) => ({ date: d.date, slots: d.slots.map((t) => [t, timeOf(t)]) })),

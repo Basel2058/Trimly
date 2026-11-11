@@ -41,7 +41,7 @@ function apply(st) {
   if (!store(() => localStorage.getItem('lang'))) setLang(detectLang(st.shop.lang));
   document.title = st.shop.name || 'Trimly';
   fresh = !!st.booked;
-  if (!st.appt) mode = 'home';
+  if (!st.appt || st.moved) mode = 'home'; // after a change, go back to the appointment card
   if (!st.days.some((d) => d.date === picked && d.slots.length)) picked = null;
   if (st.moved) toast(t('movedOk'));
   if (st.cancelled) toast(t('cancelledOk'));
