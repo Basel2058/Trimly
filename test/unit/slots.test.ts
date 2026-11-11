@@ -175,6 +175,25 @@ describe('nearestSlot', () => {
     expect(timeOf(t)).toBe('18:30');
     expect(nearestSlot([day(TUE)], at(TUE, '18:00'))).toBeNull();
   });
+  it('keeps the time of day rather than grabbing a far-off hour on a nearer day', () => {
+    const days = [day(TUE, '09:00'), day('2026-11-11', '09:30'), day('2026-11-12', '18:00')];
+    const t = nearestSlot(days, at(TUE, '18:00'))!;
+    expect([localParts(t).date, timeOf(t)]).toEqual(['2026-11-12', '18:00']);
+  });
+  it('never moves a visit to an earlier day', () => {
+    const days = [day(TUE, '14:00'), day('2026-11-11'), day('2026-11-12', '09:00')];
+    const t = nearestSlot(days, at('2026-11-11', '14:00'))!;
+    expect(localParts(t).date).toBe('2026-11-12');
+    expect(nearestSlot([day(TUE, '14:00')], at('2026-11-11', '14:00'))).toBeNull();
+  });
+  it('gives the customer notice when it can', () => {
+    const days = [day(TUE, '17:00', '17:30'), day('2026-11-11', '18:00')];
+    const soon = at(TUE, '17:20');
+    expect(timeOf(nearestSlot(days, at(TUE, '18:00'), soon)!)).toBe('17:30');
+    expect(timeOf(nearestSlot(days, at(TUE, '18:00'), at(TUE, '19:00'))!)).toBe('18:00');
+    // nothing else at all: better a short-notice time than none
+    expect(timeOf(nearestSlot([day(TUE, '17:00')], at(TUE, '18:00'), at(TUE, '19:00'))!)).toBe('17:00');
+  });
   it('isOffered checks exact starts', () => {
     const days = [day(TUE, '15:00')];
     expect(isOffered(days, at(TUE, '15:00'))).toBe(true);

@@ -252,23 +252,28 @@ export function insideWindows(windows: Interval[], start: number, end: number): 
 }
 
 /**
- * Best replacement for a visit that was at `target`: same day and closest time first,
- * otherwise the nearest day at the closest time of day; later wins a tie.
+ * Best replacement for a visit that was at `target`.
+ * People plan around the time of day, so one day later "costs" about as much as a four-hour shift.
+ * Never an earlier day, and — when there is a choice — not before `notBefore` (the customer needs notice).
  */
-export function nearestSlot(days: DaySlots[], target: number): number | null {
+export function nearestSlot(days: DaySlots[], target: number, notBefore = 0): number | null {
   const t = localParts(target);
-  let best: number | null = null;
-  let bestCost = Infinity;
-  for (const d of days) {
-    const dayDiff = Math.abs(daysBetween(t.date, d.date));
-    for (const s of d.slots) {
-      const cost =
-        dayDiff === 0 ? Math.abs(s - target) / 60 : 100000 + dayDiff * 10000 + Math.abs(localParts(s).mins - t.mins);
-      if (cost < bestCost || (cost === bestCost && best !== null && s > best)) {
-        best = s;
-        bestCost = cost;
+  const pick = (min: number): number | null => {
+    let best: number | null = null;
+    let bestCost = Infinity;
+    for (const d of days) {
+      const dayDiff = daysBetween(t.date, d.date);
+      if (dayDiff < 0) continue;
+      for (const s of d.slots) {
+        if (s < min) continue;
+        const cost = dayDiff * 240 + Math.abs(localParts(s).mins - t.mins);
+        if (cost < bestCost || (cost === bestCost && best !== null && s > best)) {
+          best = s;
+          bestCost = cost;
+        }
       }
     }
-  }
-  return best;
+    return best;
+  };
+  return pick(notBefore) ?? pick(0);
 }

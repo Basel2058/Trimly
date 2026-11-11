@@ -276,7 +276,7 @@ async function rehome(c: Ctx, w: World): Promise<{ moved: Json[]; unplaced: Json
     }
     const occupied = a.end_at - a.start_at;
     const days = availability({ settings: s, overrides: w.overrides, busy, now: c.now, needMin: occupied / 60 });
-    const to = nearestSlot(days, a.start_at);
+    const to = nearestSlot(days, a.start_at, c.now + 3600);
     plan.push({ a, to });
     if (to === null) continue;
     busy.push([to, to + occupied]);
